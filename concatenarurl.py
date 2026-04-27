@@ -1,45 +1,54 @@
 import streamlit as st
 import pandas as pd
+import io
 
-# Configuración de la página
-st.set_page_config(page_title="Mi App de Datos", layout="wide")
+# Configuración de la interfaz
+st.set_page_config(page_title="Procesador Excel PrestaShop", layout="wide")
 
-st.title("🚀 Analizador de Productos para PrestaShop")
-st.markdown("""
-Esta aplicación permite cargar ficheros CSV y visualizar las URLs de productos rápidamente.
-""")
+st.title("📦 Extractor de URLs para PrestaShop")
+st.write("Sube tu Excel original y obtén uno nuevo con las URLs listas para importar.")
 
-# Barra lateral para configuración
-st.sidebar.header("Configuración")
-archivo_subido = st.sidebar.file_uploader("Sube tu archivo CSV", type=["csv"])
+# Selector de archivos en el lateral
+archivo = st.sidebar.file_uploader("Sube tu archivo Excel (.xlsx)", type=["xlsx"])
 
-if archivo_subido is not None:
-    # Leer el archivo
-    df = pd.read_csv(archivo_subido)
-    
-    # Mostrar métricas rápidas
-    col1, col2 = st.columns(2)
-    col1.metric("Total de Productos", len(df))
-    col2.metric("Columnas detectadas", len(df.columns))
+if archivo is not None:
+    try:
+        # 1. Leer el archivo Excel
+        df = pd.read_excel(archivo)
+        st.success("✅ Archivo cargado con éxito")
 
-    # Buscador en el dataframe
-    st.subheader("Vista previa de los datos")
-    search = st.text_input("Filtrar por referencia o contenido:")
-    
-    if search:
-        df_display = df[df.apply(lambda row: row.astype(str).str.contains(search, case=False).any(), axis=1)]
-    else:
-        df_display = df
+        # 2. Función lógica para limpiar y concatenar
+        def procesar_urls(row):
+            # Extrae celdas que son texto y empiezan por http
+            urls = [str(val).strip() for val in row if pd.notna(val) and str(val).strip().lower().startswith('http')]
+            # Une las primeras 10 con una coma
+            return ','.join(urls[:10])
 
-    st.dataframe(df_display, use_container_width=True)
+        # 3. Procesamiento (Mantenemos la primera columna como Referencia)
+        ref_col = df.columns[0] 
+        columnas_datos = df.columns[1:]
+        
+        resultado_df = pd.DataFrame()
+        resultado_df[ref_col] = df[ref_col]
+        resultado_df['Imágenes (Concatenadas)'] = df[columnas_datos].apply(procesar_urls, axis=1)
 
-    # Botón de descarga para el usuario
-    csv = df.to_csv(index=False).encode('utf-8')
-    st.download_button(
-        label="📥 Descargar datos actuales",
-        data=csv,
-        file_name='datos_procesados.csv',
-        mime='text/csv',
-    )
+        # 4. Visualización
+        st.subheader("Vista previa del resultado")
+        st.dataframe(resultado_df.head(10), use_container_width=True)
+
+        # 5. Generar botón de descarga (Excel)
+        buffer = io.BytesIO()
+        with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
+            resultado_df.to_excel(writer, index=False, sheet_name='Prestashop')
+        
+        st.download_button(
+            label="📥 Descargar Excel para PrestaShop",
+            data=buffer.getvalue(),
+            file_name="resultado_prestashop.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+
+    except Exception as e:
+        st.error(f"Hubo un error al leer el Excel: {e}")
 else:
-    st.info("💡 Por favor, sube un archivo CSV desde la barra lateral para comenzar.")
+    st.info("👋 Por favor, sube un archivo .xlsx para procesar las URLs.")
